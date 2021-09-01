@@ -25,6 +25,7 @@ var (
 )
 
 // GetGatewayHealth show CPU MEM Storage
+// 获取机器运行参数
 func GetGatewayHealth() (models.GateHealth, error) {
 	cpuLoad, _ := load.Avg()
 	cpuPercent, _ := cpu.Percent(1*time.Second, false)

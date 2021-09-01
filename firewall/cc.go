@@ -113,9 +113,11 @@ func IsCCAttack(r *http.Request, app *models.Application, srcIP string) (bool, *
 	isCC := false
 	ccPolicy := GetCCPolicyByAppID(app.ID)
 	if !ccPolicy.IsEnabled {
+		//未配置CC开启
 		return false, nil, "", false
 	}
 	if isCC {
+		//这分支无用？
 		clientID := data.SHA256Hash(srcIP)
 		return isCC, ccPolicy, clientID, false
 	}
@@ -125,6 +127,7 @@ func IsCCAttack(r *http.Request, app *models.Application, srcIP string) (bool, *
 	}
 	ccCount, _ := ccCounts.LoadOrStore(ccAppID, &sync.Map{})
 	appCCCount := ccCount.(*sync.Map)
+	//通过http头部的特征值计算cookies的hash，作为response-magic（clientID）
 	preHashContent := srcIP
 	if ccPolicy.StatByURL {
 		preHashContent += r.URL.Path
@@ -140,6 +143,7 @@ func IsCCAttack(r *http.Request, app *models.Application, srcIP string) (bool, *
 	clientID := data.SHA256Hash(preHashContent)
 	clientIDStat, _ := appCCCount.LoadOrStore(clientID, &models.ClientStat{QuickCount: 0, SlowCount: 0, TimeFrameCount: 0, IsBadIP: false, RemainSeconds: 0})
 	clientStat := clientIDStat.(*models.ClientStat)
+	//？？？
 	if clientStat.IsBadIP {
 		needLog := false
 		if clientStat.QuickCount == 0 {

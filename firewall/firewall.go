@@ -74,7 +74,7 @@ func UnEscapeRawValue(rawQuery string) string {
 	return decodeQuery
 }
 
-// IsRequestHitPolicy ...
+// IsRequestHitPolicy 判断是否触发WAF防护策略
 func IsRequestHitPolicy(r *http.Request, appID int64, srcIP string) (bool, *models.GroupPolicy) {
 	ctxMap := r.Context().Value(models.PolicyKey("groupPolicyHitValue")).(*sync.Map)
 

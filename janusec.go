@@ -45,16 +45,23 @@ func main() {
 		utils.CheckError("os.Chdir error", err)
 		os.Exit(1)
 	}
+	//good habit
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	//初始化日志
 	utils.InitLogger()
+
+	//设置系统运行参数
 	SetOSEnv()
 
 	utils.DebugPrintln("Janusec Application Gateway", data.Version, "Starting ...")
 	if utils.Debug {
 		utils.DebugPrintln("Warning: Janusec is running in Debug mode.")
 	}
+
+	//初始化Mysql
 	data.InitConfig()
 	if data.IsPrimary {
+		//db 表结构初始化（如果是主库）
 		backend.InitDatabase()
 		data.InitDefaultSettings() // instanceKey & nodesKey
 	}
@@ -66,6 +73,8 @@ func main() {
 	}
 	go gateway.InitAccessStat()
 	go gateway.Counter()
+
+	//开启子协程，处理每日定时任务
 	go gateway.DailyRoutineTasks()
 
 	tlsconfig := &tls.Config{
@@ -97,6 +106,7 @@ func main() {
 		admin := data.CFG.PrimaryNode.Admin
 		if admin.Listen {
 			adminMux := http.NewServeMux()
+			//加载管理API
 			LoadAPIRoute(adminMux)
 			if len(admin.ListenHTTP) > 0 {
 				go func() {
@@ -139,6 +149,8 @@ func main() {
 			LoadAPIRoute(gateMux)
 		}
 	}
+
+	//janusec的gate路由处理
 	// Add OAuth2
 	gateMux.HandleFunc("/oauth/logout", gateway.OAuthLogout)
 	gateMux.HandleFunc("/oauth/wxwork", gateway.WxworkCallBackHandleFunc)
@@ -163,8 +175,11 @@ func main() {
 	// Test only
 	// gateMux.HandleFunc("/.auth/test", gateway.Test)
 
+	// 默认路由（没有命中上面的路由）会走到此，gateway.ReverseHandlerFunc
 	// Reverse Proxy
 	gateMux.HandleFunc("/", gateway.ReverseHandlerFunc)
+
+	//重要，为gateMux增加ctx支持
 	ctxGateMux := AddContextHandler(gateMux)
 	go func(listenPort string) {
 		listen, err := net.Listen("tcp", listenPort)
@@ -193,6 +208,8 @@ func main() {
 	}
 	utils.DebugPrintln("Listen HTTPS", data.CFG.ListenHTTPS)
 	//err = http.Serve(listen, ctxGateMux)
+
+	//利用acme实现证书自动更新
 	err = http.Serve(listen, backend.AcmeCertManager.HTTPHandler(ctxGateMux))
 	if err != nil {
 		utils.CheckError("http.Serve error", err)
@@ -203,6 +220,7 @@ func main() {
 }
 
 // AddContextHandler to add context handler
+//
 func AddContextHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// map[GroupPolicyID int64](Value int64)
@@ -217,14 +235,16 @@ func LoadAPIRoute(mux *http.ServeMux) {
 	mux.HandleFunc("/janusec-admin/ui-api", gateway.AdminAPIHandlerFunc)
 	mux.HandleFunc("/janusec-admin/webssh", gateway.WebSSHHandlerFunc)
 	mux.HandleFunc("/janusec-admin/oauth/info", gateway.OAuthGetHandleFunc)
-	mux.HandleFunc("/janusec-admin/", gateway.AdminHandlerFunc)
+	mux.HandleFunc("/janusec-admin/", gateway.AdminHandlerFunc) //默认路由
 }
 
 // SetOSEnv set environment
+// 初始化
 func SetOSEnv() {
 	// Enable TLS 1.3 for golang 1.12, not required in golang 1.14
 	// os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
 	// Enable gorilla/sessions support struct
+	// 必须提前注册二进制结构
 	gob.Register(models.AuthUser{})
 	/*
 		#!/bin/bash
@@ -232,6 +252,7 @@ func SetOSEnv() {
 		sysctl -w net.core.somaxconn=65535
 		sysctl -w net.ipv4.tcp_max_syn_backlog=1024000
 	*/
+	//设置系统参数
 	rLimit := syscall.Rlimit{Cur: 1024000, Max: 1024000}
 	err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 	if err != nil {

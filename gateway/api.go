@@ -26,6 +26,8 @@ import (
 )
 
 //AdminAPIHandlerFunc receive from browser and other nodes
+// 管理 API
+// mux.HandleFunc("/janusec-admin/ui-api", gateway.AdminAPIHandlerFunc)	//路由是一个，用参数param["action"]来区分不同的逻辑
 func AdminAPIHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	bodyBuf, _ := ioutil.ReadAll(r.Body)
 	r.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBuf))
@@ -43,6 +45,7 @@ func AdminAPIHandlerFunc(w http.ResponseWriter, r *http.Request) {
 
 	// For administrators and OAuth users
 	if (action != "login") && (action != "verify_totp") {
+		//GetAuthUser：从 cookies 中获取用户信息 authUser，里面包含了用户 id / 用户身份 / 用户管理员状态等所有信息
 		authUser, err = usermgmt.GetAuthUser(w, r)
 		if authUser == nil {
 			GenResponseByObject(w, nil, err)
@@ -160,6 +163,7 @@ func AdminAPIHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	case "get_vuln_types":
 		obj, err = firewall.GetVulnTypes()
 	case "login":
+		// 用户登录逻辑
 		obj, err = usermgmt.Login(w, r, param, clientIP)
 	case "logout":
 		obj = nil
@@ -231,6 +235,7 @@ func AdminAPIHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	case "test_smtp":
 		obj, err = nil, TestSMTP(r)
 	case "verify_totp":
+		//处理MFA校验cgi
 		uid := param["uid"].(string)
 		code := param["code"].(string)
 		obj, err = nil, usermgmt.VerifyTOTP(uid, code)

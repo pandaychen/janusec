@@ -13,6 +13,8 @@ import (
 	"sync"
 )
 
+//一个Application可以关联多个Domain
+
 // Application i.e. Web site
 type Application struct {
 	ID             int64          `json:"id"`
@@ -72,6 +74,7 @@ type DomainRelation struct {
 	Location string
 }
 
+//
 type Domain struct {
 	ID       int64        `json:"id"`
 	Name     string       `json:"name"`
@@ -150,13 +153,14 @@ type DBCertItem struct {
 }
 
 // AuthUser used for Authentication in Memory
+// cookies中保存用户的信息，和本人项目实现的思路类似
 type AuthUser struct {
-	UserID        int64  `json:"user_id"`
+	UserID        int64  `json:"user_id"` //唯一id
 	Username      string `json:"username"`
 	Logged        bool   `json:"logged"`
-	IsSuperAdmin  bool   `json:"is_super_admin"`
+	IsSuperAdmin  bool   `json:"is_super_admin"` //是否为超管
 	IsCertAdmin   bool   `json:"is_cert_admin"`
-	IsAppAdmin    bool   `json:"is_app_admin"`
+	IsAppAdmin    bool   `json:"is_app_admin"` //是否为业务管理员
 	NeedModifyPWD bool   `json:"need_modify_pwd"`
 	// v1.2.2
 	TOTPKey      string `json:"totp_key"`

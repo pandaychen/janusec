@@ -63,7 +63,7 @@ func GetDomainByID(id int64) *models.Domain {
 	return nil
 }
 
-// GetDomainByName ...
+// 寻找后端域名的配置
 func GetDomainByName(domainName string) *models.Domain {
 	for _, domain := range Domains {
 		if domain.Name == domainName {

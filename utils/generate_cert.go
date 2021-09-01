@@ -7,6 +7,8 @@
 
 package utils
 
+//自签的X509证书
+
 import (
 	"crypto/rand"
 	"crypto/rsa"

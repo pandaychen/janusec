@@ -57,7 +57,7 @@ func Counter() {
 
 // ReverseHandlerFunc used for reverse handler
 func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	// inc concurrency
+	// inc concurrency（统计并发量，非控制）
 	incChan <- 1
 	defer func() {
 		decChan <- 1
@@ -69,14 +69,18 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		//r.Host = r.Host[0:index]
 		domainStr = r.Host[0:index]
 	}
+	// 获取domainStr对应的配置，domainStr为a.com/b.com/c.com......
 	domain := backend.GetDomainByName(domainStr)
 	if domain != nil && domain.Redirect {
+		//配置了302的直接跳转
 		RedirectRequest(w, r, domain.Location)
 		return
 	}
+	// 获取domainStr对应的app配置
 	app := backend.GetApplicationByDomain(domainStr)
 	if app == nil {
 		// Static Web site
+		// 如果未寻找到对应的app配置，则返回静态页面
 		staticHandler := http.FileServer(http.Dir("./static/welcome"))
 		if strings.HasSuffix(r.URL.Path, "/") {
 			targetFile := "./static/welcome" + r.URL.Path + "index.html"
@@ -87,6 +91,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if (r.TLS == nil) && (app.RedirectHTTPS) {
+		//如果开启了https跳转，则将请求跳转至https
 		if data.CFG.ListenHTTPS == ":443" {
 			RedirectRequest(w, r, "https://"+domainStr+r.URL.Path)
 		} else {
@@ -95,6 +100,9 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//设置处理请求转发到后端应用
+
+	//设置 request URI 中的Scheme和HOST
 	r.URL.Scheme = app.InternalScheme
 	r.URL.Host = r.Host
 
@@ -103,11 +111,14 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	srcIP := GetClientIP(r, app)
 	ua := r.UserAgent()
 
+	// 处理IP规则
 	// IP Policy
 	isAllowIP := false
+	//如果ClientIPMethod是IPMethod_REMOTE_ADDR类型（直连类型？）
 	if app.ClientIPMethod == models.IPMethod_REMOTE_ADDR {
 		// First check whether it has IP Policy
 		ipPolicy := firewall.GetIPPolicyByIPAddr(srcIP)
+		//根据IP查找ip对应的处理类型
 		if ipPolicy != nil {
 			if ipPolicy.ApplyToCC {
 				if ipPolicy.IsAllow {
@@ -122,19 +133,27 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	//1.非IPMethod_REMOTE_ADDR类型
+	//2.未寻找到源IP策略
+
 	// 5-second shield from v1.2.0
 	if !isAllowIP && app.ShieldEnabled {
+		//非白名单IP且开启了ShieldEnabled策略
 		session, _ := store.Get(r, "janusec-token")
 		// check authorization
+		// 从cookies-store中尝试获取shldtoken
 		shldToken := session.Values["shldtoken"]
 		if shldToken == nil {
+			//如果没有shldtoken
 			isSearchEngine := false
+			//判断是否为爬虫
 			if data.NodeSetting.SkipSEEnabled {
 				isSearchEngine = IsSearchEngine(ua)
 			}
 			if !isSearchEngine {
 				isCrawler := IsCrawler(r, srcIP)
 				if isCrawler {
+					// 判断是否为爬虫
 					// Block IP
 					go firewall.AddIP2NFTables(srcIP, 900.0)
 					return
@@ -148,9 +167,11 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check CC
+	// 判断源IP是否触发CC攻击
 	if !isAllowIP {
 		isCC, ccPolicy, clientID, needLog := firewall.IsCCAttack(r, app, srcIP)
 		if isCC {
+			//cc攻击状态，下发对应的策略
 			targetURL := r.URL.Path
 			if len(r.URL.RawQuery) > 0 {
 				targetURL += "?" + r.URL.RawQuery
@@ -162,6 +183,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 				ClientID:  clientID,
 				TargetURL: targetURL,
 				BlockTime: nowTimeStamp}
+			//根据配置CC防护策略
 			switch ccPolicy.Action {
 			case models.Action_Block_100:
 				if needLog {
@@ -190,6 +212,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 
 	// WAF Check
 	if !isAllowIP && app.WAFEnabled {
+		//waf防护策略开启
 		if isHit, policy := firewall.IsRequestHitPolicy(r, app.ID, srcIP); isHit {
 			switch policy.Action {
 			case models.Action_Block_100:
@@ -223,7 +246,9 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 
 	// Check OAuth
 	if app.OAuthRequired && data.NodeSetting.AuthConfig.Enabled {
+		//检查oauth策略
 		session, _ := store.Get(r, "janusec-token")
+		//尝试从cookie中获取userid
 		usernameI := session.Values["userid"]
 		var url string
 		if r.TLS != nil {
@@ -311,6 +336,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Auth-User", usernameI.(string))
 	}
 
+	//选择转发的后端路由
 	dest := backend.SelectBackendRoute(app, r, srcIP)
 	if dest == nil {
 		errInfo := &models.InternalErrorInfo{
@@ -362,6 +388,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//设置http.reverseproxy的转发属性
 	// var transport http.RoundTripper
 	transport := &http.Transport{
 		TLSHandshakeTimeout:   30 * time.Second,
@@ -383,6 +410,7 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 			}
 			return conn, err
 		},
+		//TLS拨号属性
 		DialTLS: func(network, addr string) (net.Conn, error) {
 			conn, err := net.Dial("tcp", dest.Destination)
 			dest.CheckTime = nowTimeStamp
@@ -491,8 +519,8 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 			//req.URL.Scheme = app.InternalScheme
 			//req.URL.Host = r.Host
 		},
-		Transport:      transport,
-		ModifyResponse: rewriteResponse}
+		Transport:      transport,       //transport属性
+		ModifyResponse: rewriteResponse} //支持修改response
 	if utils.Debug {
 		dump, err := httputil.DumpRequest(r, true)
 		if err != nil {
@@ -500,7 +528,9 @@ func ReverseHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Println(string(dump))
 	}
+	//设置转发代理请求的头部Host字段
 	r.Host = domainStr
+	//执行真正的代理请求
 	proxy.ServeHTTP(w, r)
 }
 
@@ -563,6 +593,7 @@ func GenClientID(r *http.Request, appID int64, srcIP string) string {
 }
 
 // GetClientIP acquire the client IP address
+// 根据app中的设置获取不同类型的源IP
 func GetClientIP(r *http.Request, app *models.Application) (clientIP string) {
 	switch app.ClientIPMethod {
 	case models.IPMethod_REMOTE_ADDR:

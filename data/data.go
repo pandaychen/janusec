@@ -7,6 +7,8 @@
 
 package data
 
+//封装了sql.DB
+
 import (
 	"database/sql"
 	"fmt"

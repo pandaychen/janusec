@@ -16,6 +16,7 @@ import (
 )
 
 // InitDatabase create if not exists tables
+// MYSQL初始化及建表
 func InitDatabase() {
 	dal := data.DAL
 	err := dal.CreateTableIfNotExistsCertificates()

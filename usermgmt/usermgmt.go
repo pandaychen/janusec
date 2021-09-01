@@ -16,13 +16,14 @@ import (
 	"janusec/models"
 	"janusec/utils"
 
-	"github.com/gorilla/sessions"
+	"github.com/gorilla/sessions" //cookies 库
 )
 
 var (
 	store = sessions.NewCookieStore([]byte("janusec-app-gateway"))
 )
 
+//从cookie中判断当前用户的登录状态
 func IsLogIn(w http.ResponseWriter, r *http.Request) (isLogIn bool, userID int64) {
 	session, _ := store.Get(r, "sessionid")
 	authUserI := session.Values["authuser"]
@@ -33,6 +34,7 @@ func IsLogIn(w http.ResponseWriter, r *http.Request) (isLogIn bool, userID int64
 	return false, 0
 }
 
+// 从 cookies 中获取用户 id
 func GetAuthUser(w http.ResponseWriter, r *http.Request) (*models.AuthUser, error) {
 	session, _ := store.Get(r, "sessionid")
 	authUserI := session.Values["authuser"]
@@ -43,6 +45,7 @@ func GetAuthUser(w http.ResponseWriter, r *http.Request) (*models.AuthUser, erro
 	return nil, errors.New("please login")
 }
 
+// 用户登录状态机
 func Login(w http.ResponseWriter, r *http.Request, param map[string]interface{}, clientIP string) (*models.AuthUser, error) {
 	obj := param["object"].(map[string]interface{})
 	username := obj["username"].(string)
@@ -57,6 +60,7 @@ func Login(w http.ResponseWriter, r *http.Request, param map[string]interface{},
 	if data.PrimarySetting.AuthenticatorEnabled {
 		totpItem, err := GetTOTPByUID(username)
 		if err != nil {
+			// 首次登陆，需要注册MFA
 			// Not exist totp item, means it is the First Login, Create totp key for current uid
 			totpKey := genKey()
 			_, err := data.DAL.InsertTOTPItem(username, totpKey, false)
@@ -72,7 +76,9 @@ func Login(w http.ResponseWriter, r *http.Request, param map[string]interface{},
 			}
 			return authUser, nil
 		}
+		//非首次登陆，检查MFA
 		if !totpItem.TOTPVerified {
+			// 二次验证码触发逻辑
 			// TOTP Not Verified, redirect to register
 			authUser := &models.AuthUser{
 				UserID:       appUser.ID,
@@ -83,39 +89,48 @@ func Login(w http.ResponseWriter, r *http.Request, param map[string]interface{},
 			}
 			return authUser, nil
 		}
+		//totpItem.TOTPVerified == true
 		// Verify TOTP Auth Code
 		totpCode := obj["totp_key"].(string)
 		totpCodeInt, _ := strconv.ParseUint(totpCode, 10, 32)
+		//校验MFA
 		verifyOK := VerifyCode(totpItem.TOTPKey, uint32(totpCodeInt))
 		if !verifyOK {
 			return nil, errors.New("wrong authentication credentials")
 		}
 	}
 
+	// 校验ok的场景，包含MFA验证ok的场景
 	// auth code ok
 	authUser := &models.AuthUser{
 		UserID:        appUser.ID,
 		Username:      username,
-		Logged:        true,
-		IsSuperAdmin:  appUser.IsSuperAdmin,
-		IsCertAdmin:   appUser.IsCertAdmin,
-		IsAppAdmin:    appUser.IsAppAdmin,
+		Logged:        true,                 //登录成功
+		IsSuperAdmin:  appUser.IsSuperAdmin, //超管状态
+		IsCertAdmin:   appUser.IsCertAdmin,  //证书管理员
+		IsAppAdmin:    appUser.IsAppAdmin,   //业务管理员Logout
 		NeedModifyPWD: appUser.NeedModifyPWD}
 	session, _ := store.Get(r, "sessionid")
+	// 登录成功，将 authUser 信息保存在 cookies 中
 	session.Values["authuser"] = authUser
 	session.Options = &sessions.Options{Path: "/janusec-admin/", MaxAge: 86400 * 7}
+	// 保存 cookies，也是调用 http.SetCookie 方法：https://github.com/gorilla/sessions/blob/master/store.go#L101
 	err := session.Save(r, w)
 	if err != nil {
 		utils.DebugPrintln("session save error", err)
 	}
+
+	// 记录登录日志
 	go utils.AuthLog(clientIP, username, "JANUSEC", "/janusec-admin/")
 	return authUser, nil
 }
 
+//用户登出逻辑，销毁cookies
 func Logout(w http.ResponseWriter, r *http.Request) error {
 	session, _ := store.Get(r, "sessionid")
-	session.Values["authuser"] = nil
-	session.Options = &sessions.Options{Path: "/janusec-admin/", MaxAge: 0}
+	session.Values["authuser"] = nil                                        //1、去掉session保存的结构
+	session.Options = &sessions.Options{Path: "/janusec-admin/", MaxAge: 0} //2、去掉cookies
+	//3、强制保存cookie，需要Set-cookie下
 	err := session.Save(r, w)
 	if err != nil {
 		utils.DebugPrintln("session save error", err)
@@ -247,6 +262,7 @@ func DeleteUser(userID int64, clientIP string, authUser *models.AuthUser) error 
 	return err
 }
 
+//从cookie中获取username
 func GetLoginUsername(r *http.Request) string {
 	session, _ := store.Get(r, "sessionid")
 	authUserI := session.Values["authuser"]
@@ -267,6 +283,7 @@ func VerifyTOTP(uid string, code string) error {
 		if err != nil {
 			utils.DebugPrintln("VerifyTOTP error", err)
 		}
+		//校验成功
 		return nil
 	}
 	return errors.New("verify failed")

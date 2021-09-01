@@ -272,6 +272,7 @@ func LoadSettings() {
 
 // GetPrimarySetting for admin configuration
 func GetPrimarySetting(authUser *models.AuthUser) (*models.PrimarySetting, error) {
+	//cookie中的authUser结构
 	if !authUser.IsSuperAdmin {
 		return nil, errors.New("only super administrators can perform this operation")
 	}
